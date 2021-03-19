@@ -10,3 +10,4 @@ dependencies:
   - trimmomatic=0.39
   - fastx_toolkit=0.0.14
   - pandaseq=2.11
+  - cutadapt=3.3
