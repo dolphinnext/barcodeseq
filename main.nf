@@ -10,7 +10,7 @@ Channel
 	.ifEmpty { error "Cannot find any reads matching: ${params.reads}" }
 	.into{g_2_reads_g_0;g_2_reads_g_4}
 
-Channel.value(params.mate).into{g_3_mate_g_0;g_3_mate_g_4;g_3_mate_g_1}
+Channel.value(params.mate).into{g_3_mate_g_0;g_3_mate_g_4;g_3_mate_g_1;g_3_mate_g_7}
 
 //* params.run_Quality_Filtering =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Quality_Filtering"
 //* @style @multicolumn:{window_size,required_quality}, {leading,trailing,minlen}, {minQuality,minPercent} @condition:{tool="trimmomatic", minlen, trailing, leading, required_quality_for_window_trimming, window_size}, {tool="fastx", minQuality, minPercent}
@@ -26,7 +26,7 @@ if ($HOSTNAME == "ghpcc06.umassrc.org"){
 //* platform
 //* autofill
 if (!((params.run_Quality_Filtering && (params.run_Quality_Filtering == "yes")) || !params.run_Quality_Filtering)){
-g_2_reads_g_0.into{g_0_reads}
+g_2_reads_g_0.into{g_0_reads_g_7}
 g_0_log_file_g_1 = Channel.empty()
 } else {
 
@@ -38,7 +38,7 @@ input:
  val mate from g_3_mate_g_0
 
 output:
- set val(name), file("reads/*q")  into g_0_reads
+ set val(name), file("reads/*q")  into g_0_reads_g_7
  file "*.{fastx,trimmomatic}_quality.log" optional true  into g_0_log_file_g_1
 
 errorStrategy 'retry'
@@ -142,6 +142,90 @@ sub runCmd {
 }
 }
 
+
+
+if (!(params.run_Merge_Pairs == "yes")){
+g_0_reads_g_7.into{g_7_reads_g_9}
+} else {
+
+process merge_pairs {
+
+input:
+ file val(name),file(reads) from g_0_reads_g_7
+ val mate from g_3_mate_g_7
+
+output:
+ file val(name), file("reads/*.fastq")  into g_7_reads_g_9
+
+errorStrategy 'retry'
+maxRetries 2
+
+when:
+params.run_Merge_Pairs == "yes"
+
+nameAll = reads.toString()
+nameArray = nameAll.split(' ')
+def file2;
+
+if (nameAll.contains('.gz')) {
+    newName =  nameArray[0] - ~/(\.fastq.gz)?(\.fq.gz)?$/
+    file1 =  nameArray[0] - '.gz' 
+    if (mate == "pair") {file2 =  nameArray[1] - '.gz'}
+    runGzip = "ls *.gz | xargs -i echo gzip -df {} | sh"
+} else {
+    newName =  nameArray[0] - ~/(\.fastq)?(\.fq)?$/
+    file1 =  nameArray[0]
+    if (mate == "pair") {file2 =  nameArray[1]}
+    runGzip = ''
+}
+
+
+
+"""
+#!/bin/bash
+mkdir reads
+if [ "${mate}" == "pair" ]; then
+pandaseq -F -N -T 40 -l 50 -f ${file1} -r ${file2} -w reads/${name}.fastq
+else
+    mv $file1 ${name}.fastq 2>/dev/null
+    mv ${name}.fastq reads/.
+fi
+ 
+"""
+ 
+}
+}
+
+
+
+process Extract_Barcode {
+
+publishDir params.outdir, overwrite: true, mode: 'copy',
+	saveAs: {filename ->
+	if (filename =~ /ext\/.*.fastq$/) "aavbarcodes/$filename"
+}
+
+input:
+ file val(name),file(reads) from g_7_reads_g_9
+
+output:
+ file val(name),file("ext/*.fastq")  into g_9_reads
+
+"""
+
+five_prime = params.Extract_Barcode.five_prime
+three_prime = params.Extract_Barcode.three_prime
+min_len = params.Extract_Barcode.min_len
+max_len = params.Extract_Barcode.max_len
+mismatch = params.Extract_Barcode.mismatch
+
+#!/bin/sh 
+mkdir ext
+cutadapt -a ${five_prime} -g ${three_prime} -m ${min_len} -M $max_len --discard-untrimmed -n ${mismatch} -o ext/$name.fastq ${reads}
+
+"""
+
+}
 
 
 process Quality_Filtering_Summary {
