@@ -10,7 +10,7 @@ Channel
 	.ifEmpty { error "Cannot find any reads matching: ${params.reads}" }
 	.into{g_2_reads_g_0;g_2_reads_g_4}
 
-Channel.value(params.mate).into{g_3_mate_g_0;g_3_mate_g_4;g_3_mate_g_1;g_3_mate_g_7}
+Channel.value(params.mate).into{g_3_mate_g_0;g_3_mate_g_4;g_3_mate_g_1;g_3_mate_g_13}
 
 //* params.run_Quality_Filtering =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Quality_Filtering"
 //* @style @multicolumn:{window_size,required_quality}, {leading,trailing,minlen}, {minQuality,minPercent} @condition:{tool="trimmomatic", minlen, trailing, leading, required_quality_for_window_trimming, window_size}, {tool="fastx", minQuality, minPercent}
@@ -26,7 +26,7 @@ if ($HOSTNAME == "ghpcc06.umassrc.org"){
 //* platform
 //* autofill
 if (!((params.run_Quality_Filtering && (params.run_Quality_Filtering == "yes")) || !params.run_Quality_Filtering)){
-g_2_reads_g_0.into{g_0_reads_g_7}
+g_2_reads_g_0.into{g_0_reads_g_13}
 g_0_log_file_g_1 = Channel.empty()
 } else {
 
@@ -38,7 +38,7 @@ input:
  val mate from g_3_mate_g_0
 
 output:
- set val(name), file("reads/*q")  into g_0_reads_g_7
+ set val(name), file("reads/*q")  into g_0_reads_g_13
  file "*.{fastx,trimmomatic}_quality.log" optional true  into g_0_log_file_g_1
 
 errorStrategy 'retry'
@@ -145,17 +145,17 @@ sub runCmd {
 
 
 if (!(params.run_Merge_Pairs == "yes")){
-g_0_reads_g_7.into{g_7_reads_g_9}
+g_0_reads_g_13.into{g_13_reads_g_14}
 } else {
 
 process merge_pairs {
 
 input:
- file val(name),file(reads) from g_0_reads_g_7
- val mate from g_3_mate_g_7
+ set val(name),file(reads) from g_0_reads_g_13
+ val mate from g_3_mate_g_13
 
 output:
- file val(name), file("reads/*.fastq")  into g_7_reads_g_9
+ set val(name), file("reads/*.fastq")  into g_13_reads_g_14
 
 errorStrategy 'retry'
 maxRetries 2
@@ -206,10 +206,10 @@ publishDir params.outdir, overwrite: true, mode: 'copy',
 }
 
 input:
- file val(name),file(reads) from g_7_reads_g_9
+ set val(name),file(reads) from g_13_reads_g_14
 
 output:
- file val(name),file("ext/*.fastq")  into g_9_reads
+ set val(name),file("ext/*.fastq")  into g_14_reads
 
 """
 
