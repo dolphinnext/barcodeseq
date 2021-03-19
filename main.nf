@@ -8,9 +8,9 @@ if (!params.mate){params.mate = ""}
 Channel
 	.fromFilePairs( params.reads , size: params.mate == "single" ? 1 : params.mate == "pair" ? 2 : params.mate == "triple" ? 3 : params.mate == "quadruple" ? 4 : -1 )
 	.ifEmpty { error "Cannot find any reads matching: ${params.reads}" }
-	.set{g_2_reads_g_0}
+	.into{g_2_reads_g_0;g_2_reads_g_4}
 
-Channel.value(params.mate).set{g_3_mate_g_0}
+Channel.value(params.mate).into{g_3_mate_g_0;g_3_mate_g_4;g_3_mate_g_1}
 
 //* params.run_Quality_Filtering =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Quality_Filtering"
 //* @style @multicolumn:{window_size,required_quality}, {leading,trailing,minlen}, {minQuality,minPercent} @condition:{tool="trimmomatic", minlen, trailing, leading, required_quality_for_window_trimming, window_size}, {tool="fastx", minQuality, minPercent}
@@ -146,8 +146,14 @@ sub runCmd {
 
 process Quality_Filtering_Summary {
 
+publishDir params.outdir, overwrite: true, mode: 'copy',
+	saveAs: {filename ->
+	if (filename =~ /quality_filter_summary.tsv$/) "quality/$filename"
+}
+
 input:
  file logfile from g_0_log_file_g_1.collect()
+ val mate from g_3_mate_g_1
 
 output:
  file "quality_filter_summary.tsv"  into g_1_outputFileTSV
@@ -239,6 +245,45 @@ sub writeFile {
 }
 
 '''
+}
+
+//* params.run_FastQC =  "no"  //* @dropdown @options:"yes","no" @description:"FastQC provides quality control checks on raw sequence data."
+
+
+
+process FastQC {
+
+publishDir params.outdir, overwrite: true, mode: 'copy',
+	saveAs: {filename ->
+	if (filename =~ /.*.(html|zip)$/) "fastQC/$filename"
+}
+
+input:
+ val mate from g_3_mate_g_4
+ set val(name), file(reads) from g_2_reads_g_4
+
+output:
+ file '*.{html,zip}'  into g_4_FastQCout
+
+errorStrategy 'retry'
+maxRetries 3
+
+when:
+(params.run_FastQC && (params.run_FastQC == "yes"))
+
+script:
+nameAll = reads.toString()
+if (nameAll.contains('.gz')) {
+    file =  nameAll - '.gz' - '.gz'
+    runGzip = "ls *.gz | xargs -i echo gzip -df {} | sh"
+} else {
+    file =  nameAll 
+    runGzip = ''
+}
+"""
+${runGzip}
+fastqc ${file} 
+"""
 }
 
 
