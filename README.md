@@ -2,7 +2,7 @@
 The typical command for running the pipeline is as follows:
 
 ```bash
-nextflow run dolphinnext/barcodseq --profile docker --reads '*_R{1,2}.fastq.gz' --mate 'pair'
+nextflow run dolphinnext/barcodseq:1.0 --profile docker --reads '*_R{1,2}.fastq.gz' --mate 'pair'
 ```
 
 This will launch the pipeline with the `docker` configuration profile. See below for more information about profiles.
@@ -19,5 +19,5 @@ results         # Finished results
 When you run the above command, Nextflow automatically pulls the pipeline code from GitHub and stores it as a cached version. When running the pipeline after this, it will always use the cached version. In order to download latest version of the pipeline you need to run following command:
 
 ```bash
-nextflow pull dolpinnext/barcodeseq
+nextflow pull dolpinnext/barcodeseq:1.0
 ```
