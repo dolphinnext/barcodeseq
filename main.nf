@@ -777,7 +777,7 @@ input:
  file tsv from g_17_outputFileTSV_g_20.collect()
 
 output:
- file "out/*.tsv"  into g_20_outFileTSV
+ file "out/*.tsv"  into g_20_outFileTSV_g_22
 
 errorStrategy 'retry'
 maxRetries 1
@@ -863,6 +863,78 @@ sub replace {
   $string =~s/\$from/\$to/ig;
   return $string;
 }
+'''
+}
+
+
+process codonPlot {
+
+publishDir params.outdir, overwrite: true, mode: 'copy',
+	saveAs: {filename ->
+	if (filename =~ /.*.pdf$/) "codonPlots/$filename"
+}
+
+input:
+ file tsvfile from g_20_outFileTSV_g_22
+
+output:
+ file "*.pdf"  into g_22_outputFilePdf
+
+errorStrategy 'retry'
+maxRetries 1
+
+shell:
+'''
+#!/usr/bin/env Rscript
+library(dplyr)
+library(plyr)
+library(data.table)
+library(reshape)
+library(ggplot2)
+
+Acounts <- read.delim("!${tsvfile}")
+
+Ac_sorted <- Acounts[with(Acounts, order(pos, codon)),]
+
+libs <- colnames(Acounts)[5:ncol(Acounts)]
+
+for (lib in libs) {
+
+	p  <- list()
+	for (pos in seq(1:10)) {
+	
+		Ac_sorted_pos <- Ac_sorted[Ac_sorted$pos==pos,c("pos", "aa", "codon", "annot", lib)]
+		names(Ac_sorted_pos) <-  c("pos", "aa", "codon", "annot", "count")
+		freq.by_aa <- data.table(ddply(Ac_sorted_pos, c("pos","aa"), summarize, Freq = sum(count)))
+		
+		freq.aa_table <- dcast(freq.by_aa , aa ~ pos, value.var="Freq")
+		
+		aa.totals <- freq.by_aa
+		names(aa.totals) <- c("pos", "AA", "Freq.AA")
+		codon.totals <- Ac_sorted_pos[, c("codon", "aa", "pos", "annot", "count")]
+		names(codon.totals) <- c("Codon", "AA", "pos", "annot", "Freq")
+		codon.totals$Codon <- paste0(codon.totals$Codon, "\\n(",codon.totals$annot,")")
+		aa.codon.totals <- codon.totals %>% right_join(aa.totals, by=c("AA", "pos"))
+		aa.codon.totals$Codon.Pct.Freq <- with(aa.codon.totals, Freq/Freq.AA)
+		
+		label_aa_count <- function(aa) paste(aa, aa.totals[aa.totals$AA == aa, "Freq.AA"], 
+		        sep = ": ")
+		
+		aa.codon.totals$AA.Display <- unlist(lapply(aa.codon.totals$AA, label_aa_count))
+		
+		p[[pos]] <- ggplot(aa.codon.totals, 
+		  aes(y = Codon.Pct.Freq, x = Codon, label = Freq)) + geom_bar(stat="identity") + 
+		  ylim(0, 1.2) +
+		  facet_wrap(~AA.Display, scale = "free_x") + 
+		  geom_text(colour = "black", vjust = -0.5) + theme_bw() 
+	}
+	pdf(paste0("bar",lib,".pdf"), height=20, width=20,  paper = "a4r")
+	for (pos in seq(1:10)) {
+	  print(p[[pos]])
+	}
+	graphics.off()
+}
+
 '''
 }
 
