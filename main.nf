@@ -12,7 +12,7 @@ Channel
 	.into{g_2_reads_g15_3;g_2_reads_g15_18}
 
 Channel.value(params.mate).into{g_3_mate_g_13;g_3_mate_g15_3;g_3_mate_g15_11;g_3_mate_g15_16;g_3_mate_g15_18;g_3_mate_g15_19;g_3_mate_g15_20;g_3_mate_g15_21}
-Channel.value(params.wtseq).set{g_18_barcode_g_17}
+Channel.value(params.wtseq).into{g_18_barcode_g_17;g_18_barcode_g_24}
 
 //* params.run_Adapter_Removal =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Adapter_Removal"
 //* @style @multicolumn:{seed_mismatches, palindrome_clip_threshold, simple_clip_threshold} @condition:{Tool_for_Adapter_Removal="trimmomatic", seed_mismatches, palindrome_clip_threshold, simple_clip_threshold}, {Tool_for_Adapter_Removal="fastx_clipper", discard_non_clipped}
@@ -777,7 +777,7 @@ input:
  file tsv from g_17_outputFileTSV_g_20.collect()
 
 output:
- file "out/*.tsv"  into g_20_outFileTSV_g_22
+ file "out/*.tsv"  into g_20_outFileTSV_g_24
 
 errorStrategy 'retry'
 maxRetries 1
@@ -875,10 +875,11 @@ publishDir params.outdir, overwrite: true, mode: 'copy',
 }
 
 input:
- file tsvfile from g_20_outFileTSV_g_22
+ file tsvfile from g_20_outFileTSV_g_24
+ val wtseq from g_18_barcode_g_24
 
 output:
- file "*.pdf"  into g_22_outputFilePdf
+ file "*.pdf"  into g_24_outputFilePdf
 
 errorStrategy 'retry'
 maxRetries 1
@@ -886,14 +887,14 @@ maxRetries 1
 shell:
 '''
 #!/usr/bin/env Rscript
-library(dplyr)
 library(plyr)
+library(dplyr)
 library(data.table)
 library(reshape)
 library(ggplot2)
 
-Acounts <- read.delim("!${tsvfile}")
-
+Acounts <- read.delim("!{tsvfile}")
+wtseq <- "!{wtseq}"
 Ac_sorted <- Acounts[with(Acounts, order(pos, codon)),]
 
 libs <- colnames(Acounts)[5:ncol(Acounts)]
@@ -901,7 +902,7 @@ libs <- colnames(Acounts)[5:ncol(Acounts)]
 for (lib in libs) {
 
 	p  <- list()
-	for (pos in seq(1:10)) {
+	for (pos in seq(1:(nchar(wtseq)/3))) {
 	
 		Ac_sorted_pos <- Ac_sorted[Ac_sorted$pos==pos,c("pos", "aa", "codon", "annot", lib)]
 		names(Ac_sorted_pos) <-  c("pos", "aa", "codon", "annot", "count")
@@ -926,10 +927,13 @@ for (lib in libs) {
 		  aes(y = Codon.Pct.Freq, x = Codon, label = Freq)) + geom_bar(stat="identity") + 
 		  ylim(0, 1.2) +
 		  facet_wrap(~AA.Display, scale = "free_x") + 
-		  geom_text(colour = "black", vjust = -0.5) + theme_bw() 
+		  geom_text(colour = "black", vjust = -0.5) + theme_bw() +
+		  ggtitle(paste0(lib," pos:", pos, " codon frequency plot")) +
+		  theme(plot.title = element_text(hjust = 0.5)) +
+		  xlab("Codon") + ylab("Codon % Freq.")
 	}
-	pdf(paste0("bar",lib,".pdf"), height=20, width=20,  paper = "a4r")
-	for (pos in seq(1:10)) {
+	pdf(paste0("bar",lib,".pdf"), height=20, width=20,  paper = "a4r", compress=TRUE)
+	for (pos in seq(1:(nchar(wtseq)/3))) {
 	  print(p[[pos]])
 	}
 	graphics.off()
