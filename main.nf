@@ -4,7 +4,8 @@ params.outdir = 'results'
 
 if (!params.reads){params.reads = ""} 
 if (!params.mate){params.mate = ""} 
-if (!params.wtseq){params.wtseq = ""} 
+if (!params.mergedmate){params.mergedmate = ""} 
+if (!params.variants_file){params.variants_file = ""} 
 
 Channel
 	.fromFilePairs( params.reads , size: params.mate == "single" ? 1 : params.mate == "pair" ? 2 : params.mate == "triple" ? 3 : params.mate == "quadruple" ? 4 : -1 )
@@ -12,7 +13,8 @@ Channel
 	.into{g_2_reads_g15_3;g_2_reads_g15_18}
 
 Channel.value(params.mate).into{g_3_mate_g_13;g_3_mate_g15_3;g_3_mate_g15_11;g_3_mate_g15_16;g_3_mate_g15_18;g_3_mate_g15_19;g_3_mate_g15_20;g_3_mate_g15_21}
-Channel.value(params.wtseq).into{g_18_barcode_g_17;g_18_barcode_g_24}
+Channel.value(params.mergedmate).set{g_19_mate_g_34}
+Channel.value(params.variants_file).set{g_35_filePath_g_34}
 
 //* params.run_Adapter_Removal =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Adapter_Removal"
 //* @style @multicolumn:{seed_mismatches, palindrome_clip_threshold, simple_clip_threshold} @condition:{Tool_for_Adapter_Removal="trimmomatic", seed_mismatches, palindrome_clip_threshold, simple_clip_threshold}, {Tool_for_Adapter_Removal="fastx_clipper", discard_non_clipped}
@@ -589,21 +591,21 @@ fi
 
 
 if (!((params.run_Extract_Barcode && (params.run_Extract_Barcode == "yes")))){
-g_13_reads_g_14.into{g_14_reads_g_17}
+g_13_reads_g_14.into{g_14_reads_g_34}
 } else {
 
 process Extract_Barcode {
 
 publishDir params.outdir, overwrite: true, mode: 'copy',
 	saveAs: {filename ->
-	if (filename =~ /ext\/.*.fastq$/) "barcodes/$filename"
+	if (filename =~ /ext\/.*.fastq$/) "aavbarcodes/$filename"
 }
 
 input:
  set val(name),file(reads) from g_13_reads_g_14
 
 output:
- set val(name),file("ext/*.fastq")  into g_14_reads_g_17
+ set val(name),file("ext/*.fastq")  into g_14_reads_g_34
 
 errorStrategy 'retry'
 maxRetries 3
@@ -630,154 +632,115 @@ cutadapt -g ${five_prime} -m ${min_len} -M $max_len -n ${mismatch} -o ext/${name
 }
 
 
+//* params.variants_file =  "/project/umw_biocore/kucukura/data/akuous/variants/variants.txt"  //* @input  @description:"Variant sequences Format: VariantSeq\tVariantname" 
 
-process countA {
+
+process count_variants {
 
 input:
- set val(name),file(reads) from g_14_reads_g_17
- val wtseq from g_18_barcode_g_17
+ set val(name),file(reads) from g_14_reads_g_34
+ val mate from g_19_mate_g_34
+ val variants_file from g_35_filePath_g_34
 
 output:
- set "*.tsv"  into g_17_outputFileTSV_g_20
+ set "*.tsv"  into g_34_outputFileTSV_g_42
 
 errorStrategy 'retry'
 maxRetries 2
+
 
 shell:
 '''
 #!/usr/bin/env perl
 
+open(VARIANTS, "!{variants_file}");
 open(READS, "!{reads}");
-my $wtseq= "!{wtseq}";
-my $name ="!{name}";
 
-my %table = (
-    'TCA' => 'S',    # Serine
-    'TCC' => 'S',    # Serine
-    'TCG' => 'S',    # Serine
-    'TCT' => 'S',    # Serine
-    'TTC' => 'F',    # Phenylalanine
-    'TTT' => 'F',    # Phenylalanine
-    'TTA' => 'L',    # Leucine
-    'TTG' => 'L',    # Leucine
-    'TAC' => 'Y',    # Tyrosine
-    'TAT' => 'Y',    # Tyrosine
-    'TAA' => '*',    # Stop
-    'TAG' => '*',    # Stop
-    'TGC' => 'C',    # Cysteine
-    'TGT' => 'C',    # Cysteine
-    'TGA' => '*',    # Stop
-    'TGG' => 'W',    # Tryptophan
-    'CTA' => 'L',    # Leucine
-    'CTC' => 'L',    # Leucine
-    'CTG' => 'L',    # Leucine
-    'CTT' => 'L',    # Leucine
-    'CCA' => 'P',    # Proline
-    'CCC' => 'P',    # Proline
-    'CCG' => 'P',    # Proline
-    'CCT' => 'P',    # Proline
-    'CAC' => 'H',    # Histidine
-    'CAT' => 'H',    # Histidine
-    'CAA' => 'Q',    # Glutamine
-    'CAG' => 'Q',    # Glutamine
-    'CGA' => 'R',    # Arginine
-    'CGC' => 'R',    # Arginine
-    'CGG' => 'R',    # Arginine
-    'CGT' => 'R',    # Arginine
-    'ATA' => 'I',    # Isoleucine
-    'ATC' => 'I',    # Isoleucine
-    'ATT' => 'I',    # Isoleucine
-    'ATG' => 'M',    # Methionine
-    'ACA' => 'T',    # Threonine
-    'ACC' => 'T',    # Threonine
-    'ACG' => 'T',    # Threonine
-    'ACT' => 'T',    # Threonine
-    'AAC' => 'N',    # Asparagine
-    'AAT' => 'N',    # Asparagine
-    'AAA' => 'K',    # Lysine
-    'AAG' => 'K',    # Lysine
-    'AGC' => 'S',    # Serine
-    'AGT' => 'S',    # Serine
-    'AGA' => 'R',    # Arginine
-    'AGG' => 'R',    # Arginine
-    'GTA' => 'V',    # Valine
-    'GTC' => 'V',    # Valine
-    'GTG' => 'V',    # Valine
-    'GTT' => 'V',    # Valine
-    'GCA' => 'A',    # Alanine
-    'GCC' => 'A',    # Alanine
-    'GCG' => 'A',    # Alanine
-    'GCT' => 'A',    # Alanine
-    'GAC' => 'D',    # Aspartic Acid
-    'GAT' => 'D',    # Aspartic Acid
-    'GAA' => 'E',    # Glutamic Acid
-    'GAG' => 'E',    # Glutamic Acid
-    'GGA' => 'G',    # Glycine
-    'GGC' => 'G',    # Glycine
-    'GGG' => 'G',    # Glycine
-    'GGT' => 'G',    # Glycine
-    );
-
-my %count=();
-my %annot=();
-my $len=length($wtseq)/3;
-
-for(my $i=1; $i<=$len; $i++)
+my %lib=();
+my %variants=();
+my %variantseq=();
+my %unknownvaryiants=();
+my $i=0;
+while($line=<VARIANTS>)
 {
-   $count{$i}=() if (!exists($count{$i}));
-   $annot{$i}=() if (!exists($annot{$i}));
-   my $wtnt = substr($wtseq, ($i-1)*3, 3);
-   my $wtaa= $table{$wtnt};
-   foreach my $codon (keys %table){
-      $count{$i}{$codon}=0 if (!exists($count{$i}{$codon}));
-      my $ann="mut";
-      $ann = "syn" if($wtaa eq $table{$codon});
-      $ann = "wt" if($wtnt eq $codon);
-      $ann = "stop" if("*" eq $table{$codon});
-      $annot{$i}{$codon}=$ann;  
+  chomp($line);
+  if ($line=~/([ACGT]*)[\\t\\s](.*)/) {
+    if (length($2)>0 && length($1)>0) {
+        $variants{$1} = 0;
+        $variantseq{$1} = $2;
+        my @libarr=split(/_/, $2);
+        $lib{$libarr[0]}=0;
+    }
   }
 }
-my $j=0;
-while($read=<READS>)
+while($line=<READS>)
 {
-  chomp($read);
-  $j++;
-  if ($j % 100000 == 0){
-     print "$j reads processed!\n"; 
+  chomp($line);
+  $i++;
+  if ($i % 100000 == 0){
+     print "$i reads processed!\\n"; 
   }
-  if ($read=~/^([ACGT]*)$/) {
-     for(my $i=1; $i<=$len; $i++)
-     {
-          $count{$i}{substr($read, ($i-1)*3, 3)}++;
-     }
-  }
-}
-
-open(OUT, ">", $name."_Acounts.tsv");
-print OUT "codon\\taa\\tpos\\tannot\\tcount\n";
-for(my $i=1; $i<=$len; $i++)
-{
-   foreach my $codon (sort keys %table){
-      print OUT $codon."\\t".$table{$codon}."\\t".$i."\\t".$annot{$i}{$codon}."\\t".$count{$i}{$codon}."\n";
+  if ($line=~/^([ACGT]*)$/) {
+    if (exists($variants{$line})) {
+        $variants{$line}++;
+    }
+    else {
+         if (exists($unknownvariants{$line})) {
+             $unknownvariants{$line}++;
+         }else{
+             $unknownvariants{$line}=1;
+         }
+    }
    }
 }
-close(OUT);
+
+open(OUTKNOWN, ">", "!{name}_known.tsv");
+print OUTKNOWN "lib\\tseq\\tcount\\n";
+
+foreach my $key (keys %variants)
+{
+   if ($variants{$key}>0){
+      print OUTKNOWN $variantseq{$key}."\\t".$key."\\t".$variants{$key}."\\n";
+      my @libarr=split(/_/,$variantseq{$key});
+      $lib{$libarr[0]}++;
+   }
+}
+close(OUTKNOWN);
+
+open(OUTKNOWNSUM, ">", "!{name}_knownsum.tsv");
+print OUTKNOWNSUM "lib\\tcount\\n";
+
+foreach my $key (keys %lib)
+{
+   print OUTKNOWNSUM $key."\\t".$lib{$key}."\\n";
+}
+close(OUTKNOWNSUM);
+
+open(OUTUNKNOWN, ">", "!{name}_unknown.tsv");
+print OUTUNKNOWN "seq\\tcount\\n";
+
+foreach my $key (keys %unknownvariants)
+{
+   print OUTUNKNOWN $key."\\t".$unknownvariants{$key}."\\n";
+}
+close(OUTUNKNOWN);
+
 '''
 }
 
 
-process mergeACounts {
+process mergeCounts {
 
 publishDir params.outdir, overwrite: true, mode: 'copy',
 	saveAs: {filename ->
-	if (filename =~ /out\/.*.tsv$/) "Acounts/$filename"
+	if (filename =~ /out\/.*.tsv$/) "variant_counts/$filename"
 }
 
 input:
- file tsv from g_17_outputFileTSV_g_20.collect()
+ file tsv from g_34_outputFileTSV_g_42.collect()
 
 output:
- file "out/*.tsv"  into g_20_outFileTSV_g_24
+ file "out/*.tsv"  into g_42_outputFile
 
 errorStrategy 'retry'
 maxRetries 1
@@ -790,7 +753,9 @@ use strict;
 
 #################### VARIABLES ######################
  my %tf = (
-	"Acounts" => 5
+	"known" => 3,
+	"unknown" => 2,
+	"knownsum" => 2
  );
 my $indir=$ENV{'PWD'};
 my $outdir=$ENV{'PWD'}."/out";
@@ -804,6 +769,7 @@ foreach my $type (keys %tf) {
 	print "type ".$type." ... col: ".$tf{$type}."\\n";
 	my @a=();
 	my %b=();
+	my %c=();
 	my $i=0;
 	foreach my $f (@files) { 
 	  my $ind=$indir."/".$f;
@@ -821,8 +787,10 @@ foreach my $type (keys %tf) {
 	      next if ($lineNum++ == 0);
 	      my @v=split; 
 	      #print "Using $type $tf{$type}\\n";
-	      my $count = pop @v;
-	      $b{join("-", @v)}{$i}= $count;
+	      my $count = $v[$tf{$type}-1];
+	      #print $count."\\t";
+	      $b{$v[0]}{$i}= $count;
+	      $c{$v[0]}=$v[1] if($tf{$type}>2);
 	  }
 	  print "\\n";
 	  close IN;
@@ -833,7 +801,7 @@ foreach my $type (keys %tf) {
 	if ($tf{$type} == 2) {
 	  print OUT "Seq";
 	} else {
-	  print OUT "codon\\taa\\tpos\\tannot";
+	  print OUT "Id\\tSeq";
 	}
 	
 	for(my $j=1;$j<=$i;$j++)
@@ -844,8 +812,13 @@ foreach my $type (keys %tf) {
 	
 	foreach my $key (keys %b)
 	{
-	 print OUT replace("-", "\\t", $key); #only print out the first columns
-	 
+	 if ($tf{$type} == 2) {
+	   print OUT $key; #only print out the first column;
+	 }
+	 else
+	 {
+	   print OUT $key."\\t".$c{$key}; #only print out the first two columns
+	 }
 	 for(my $j=1;$j<=$i;$j++)
 	 {
 	   if (exists($b{$key}) && exists($b{$key}{$j})){
@@ -856,89 +829,9 @@ foreach my $type (keys %tf) {
 	 }
 	 print OUT "\\n";
 	}
+	
 	close OUT;
 }
-sub replace {
-  my ($from,$to,$string) = @_;
-  $string =~s/\$from/\$to/ig;
-  return $string;
-}
-'''
-}
-
-
-process codonPlot {
-
-publishDir params.outdir, overwrite: true, mode: 'copy',
-	saveAs: {filename ->
-	if (filename =~ /.*.pdf$/) "codonPlots/$filename"
-}
-
-input:
- file tsvfile from g_20_outFileTSV_g_24
- val wtseq from g_18_barcode_g_24
-
-output:
- file "*.pdf"  into g_24_outputFilePdf
-
-errorStrategy 'retry'
-maxRetries 1
-
-shell:
-'''
-#!/usr/bin/env Rscript
-library(plyr)
-library(dplyr)
-library(data.table)
-library(reshape)
-library(ggplot2)
-
-Acounts <- read.delim("!{tsvfile}")
-wtseq <- "!{wtseq}"
-Ac_sorted <- Acounts[with(Acounts, order(pos, codon)),]
-
-libs <- colnames(Acounts)[5:ncol(Acounts)]
-
-for (lib in libs) {
-
-	p  <- list()
-	for (pos in seq(1:(nchar(wtseq)/3))) {
-	
-		Ac_sorted_pos <- Ac_sorted[Ac_sorted$pos==pos,c("pos", "aa", "codon", "annot", lib)]
-		names(Ac_sorted_pos) <-  c("pos", "aa", "codon", "annot", "count")
-		freq.by_aa <- data.table(ddply(Ac_sorted_pos, c("pos","aa"), summarize, Freq = sum(count)))
-		
-		freq.aa_table <- dcast(freq.by_aa , aa ~ pos, value.var="Freq")
-		
-		aa.totals <- freq.by_aa
-		names(aa.totals) <- c("pos", "AA", "Freq.AA")
-		codon.totals <- Ac_sorted_pos[, c("codon", "aa", "pos", "annot", "count")]
-		names(codon.totals) <- c("Codon", "AA", "pos", "annot", "Freq")
-		codon.totals$Codon <- paste0(codon.totals$Codon, "\\n(",codon.totals$annot,")")
-		aa.codon.totals <- codon.totals %>% right_join(aa.totals, by=c("AA", "pos"))
-		aa.codon.totals$Codon.Pct.Freq <- with(aa.codon.totals, Freq/Freq.AA)
-		
-		label_aa_count <- function(aa) paste(aa, aa.totals[aa.totals$AA == aa, "Freq.AA"], 
-		        sep = ": ")
-		
-		aa.codon.totals$AA.Display <- unlist(lapply(aa.codon.totals$AA, label_aa_count))
-		
-		p[[pos]] <- ggplot(aa.codon.totals, 
-		  aes(y = Codon.Pct.Freq, x = Codon, label = Freq)) + geom_bar(stat="identity") + 
-		  ylim(0, 1.2) +
-		  facet_wrap(~AA.Display, scale = "free_x") + 
-		  geom_text(colour = "black", vjust = -0.5) + theme_bw() +
-		  ggtitle(paste0(lib," pos:", pos, " codon frequency plot")) +
-		  theme(plot.title = element_text(hjust = 0.5)) +
-		  xlab("Codon") + ylab("Codon % Freq.")
-	}
-	pdf(paste0("bar",lib,".pdf"), height=20, width=20,  paper = "a4r", compress=TRUE)
-	for (pos in seq(1:(nchar(wtseq)/3))) {
-	  print(p[[pos]])
-	}
-	graphics.off()
-}
-
 '''
 }
 

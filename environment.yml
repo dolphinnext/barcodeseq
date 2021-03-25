@@ -18,4 +18,3 @@ dependencies:
   - bowtie=1.2.2
   - bedtools=2.27.1
   - igvtools=2.5.3
-  - r-base=4.0.3
