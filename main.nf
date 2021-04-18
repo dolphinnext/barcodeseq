@@ -879,7 +879,7 @@ sub highlow{
 '''
 }
 
-module load blast/2.7.1+
+
 process Blastn {
 
 publishDir params.outdir, overwrite: true, mode: 'copy',
