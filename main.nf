@@ -1,6 +1,7 @@
 $HOSTNAME = ""
 params.outdir = 'results'  
 
+//* params.count_reverse_complement =  "no"   //* @dropdown @options:"yes","no" @show_settings:"Count_Variants"
 
 if (!params.reads){params.reads = ""} 
 if (!params.mate){params.mate = ""} 
@@ -13,8 +14,8 @@ Channel
 	.into{g_2_reads_g15_3;g_2_reads_g15_18}
 
 Channel.value(params.mate).into{g_3_mate_g_13;g_3_mate_g15_3;g_3_mate_g15_11;g_3_mate_g15_16;g_3_mate_g15_18;g_3_mate_g15_19;g_3_mate_g15_20;g_3_mate_g15_21}
-Channel.value(params.mergedmate).set{g_19_mate_g_34}
-Channel.value(params.variants_file).set{g_35_filePath_g_34}
+Channel.value(params.mergedmate).set{g_19_mate_g_45}
+Channel.value(params.variants_file).set{g_35_filePath_g_45}
 
 //* params.run_Adapter_Removal =   "no"   //* @dropdown @options:"yes","no" @show_settings:"Adapter_Removal"
 //* @style @multicolumn:{seed_mismatches, palindrome_clip_threshold, simple_clip_threshold} @condition:{Tool_for_Adapter_Removal="trimmomatic", seed_mismatches, palindrome_clip_threshold, simple_clip_threshold}, {Tool_for_Adapter_Removal="fastx_clipper", discard_non_clipped}
@@ -591,7 +592,7 @@ fi
 
 
 if (!((params.run_Extract_Barcode && (params.run_Extract_Barcode == "yes")))){
-g_13_reads_g_14.into{g_14_reads_g_34}
+g_13_reads_g_14.into{g_14_reads_g_45}
 } else {
 
 process Extract_Barcode {
@@ -605,7 +606,7 @@ input:
  set val(name),file(reads) from g_13_reads_g_14
 
 output:
- set val(name),file("ext/*.fastq")  into g_14_reads_g_34
+ set val(name),file("ext/*.fastq")  into g_14_reads_g_45
 
 errorStrategy 'retry'
 maxRetries 3
@@ -613,63 +614,107 @@ maxRetries 3
 when:
 (params.run_Extract_Barcode && (params.run_Extract_Barcode == "yes"))
 
-script:
+shell:
+count_reverse_complement = params.count_reverse_complement
 five_prime = params.Extract_Barcode.five_prime
 three_prime = params.Extract_Barcode.three_prime
 min_len = params.Extract_Barcode.min_len
 max_len = params.Extract_Barcode.max_len
 mismatch = params.Extract_Barcode.mismatch
 
-"""
-#!/bin/sh 
-mkdir -p ext
-cutadapt -a ${three_prime} -n ${mismatch} -o ext/${name}.tmp ${reads}
-cutadapt -g ${five_prime} -m ${min_len} -M $max_len -n ${mismatch} -o ext/${name}.fastq ext/${name}.tmp
+'''
+#!/usr/bin/env perl
 
-"""
+my $count_reverse_complement = "!{count_reverse_complement}";
+my $five_prime = "!{five_prime}";
+my $three_prime = "!{three_prime}";
+my $min_len = "!{min_len}";
+my $max_len = "!{max_len}";
+my $mismatch = "!{mismatch}";
+
+runCmd("mkdir -p ext");
+
+if ($count_reverse_complement eq "no"){
+	runCmd("cutadapt -a $three_prime -n $mismatch -o ext/!{name}.tmp !{reads}");
+	runCmd("cutadapt -g $five_prime -m $min_len -M $max_len -n $mismatch -o ext/!{name}.fastq ext/!{name}.tmp");
+}
+else {
+	my $rev_threeprime=$three_prime;
+	my $rev_fiveprime=$five_prime;
+	$rev_threeprime=~tr/ACGT/TGCA/;
+	$rev_fiveprime=~tr/ACGT/TGCA/;
+	$rev_threeprime = reverse($rev_threeprime);
+	$rev_fiveprime = reverse($rev_fiveprime);
+	runCmd("cutadapt -a $three_prime -n $mismatch -o ext/!{name}.tmp.1 !{reads}");
+	runCmd("cutadapt -g $five_prime -m $min_len -M $max_len -n $mismatch -o ext/!{name}.tmp.2 ext/!{name}.tmp.1");
+	runCmd("cutadapt -a $rev_fiveprime -n $mismatch -o ext/!{name}.tmp.3 !{reads}");
+	runCmd("cutadapt -g $rev_threeprime -m $min_len -M $max_len -n $mismatch -o ext/!{name}.tmp.4 ext/!{name}.tmp.3");
+	runCmd("cat ext/!{name}.tmp.2 ext/!{name}.tmp.4 > ext/!{name}.fastq");
+}
+##Subroutines
+sub runCmd {
+    my ($com) = @_;
+    my $error = system($com);
+    if   ($error) { die "Command failed: $error $com\\n"; }
+    else          { print "Command successful: $com\\n"; }
+}
+'''
 
 }
 }
 
 
-//* params.variants_file =  "/project/umw_biocore/kucukura/data/akuous/variants/variants.txt"  //* @input  @description:"Variant sequences Format: VariantSeq\tVariantname" 
+//* params.variants_file =  "/project/umw_biocore/kucukura/data/akuous/variants/variants.txt"  //* @input  @description:"Variant sequences Format: VariantSeq\tVariantname" @show_settings:"Count_Variants" 
 
 
 process count_variants {
 
 input:
- set val(name),file(reads) from g_14_reads_g_34
- val mate from g_19_mate_g_34
- val variants_file from g_35_filePath_g_34
+ set val(name),file(reads) from g_14_reads_g_45
+ val mate from g_19_mate_g_45
+ val variants_file from g_35_filePath_g_45
 
 output:
- set "*.tsv"  into g_34_outputFileTSV_g_42
+ set "*.tsv"  into g_45_outputFileTSV_g_44
+ file "*.fa"  into g_45_fastaFile_g_50
 
 errorStrategy 'retry'
 maxRetries 2
 
-
 shell:
+count_reverse_complement = params.count_reverse_complement
+
 '''
 #!/usr/bin/env perl
+use POSIX;
 
 open(VARIANTS, "!{variants_file}");
 open(READS, "!{reads}");
-
+my $count_revcomp = "!{count_reverse_complement}";
+my $name = "!{name}";
+my $count_revcomp = "no";
 my %lib=();
+my %libtotal=();
 my %variants=();
-my %variantseq=();
-my %unknownvaryiants=();
+my %variantCounts=();
+my %variantNames=();
+my %variantlib=();
+my %unknownvariants=();
+my %unknownvariantCounts=();
+my $variantlen=0;
 my $i=0;
 while($line=<VARIANTS>)
 {
   chomp($line);
   if ($line=~/([ACGT]*)[\\t\\s](.*)/) {
     if (length($2)>0 && length($1)>0) {
-        $variants{$1} = 0;
-        $variantseq{$1} = $2;
+        $variants{$1}=0;
+        $variantlib{$1} = $2;
         my @libarr=split(/_/, $2);
         $lib{$libarr[0]}=0;
+        $libtotal{$libarr[0]}=0;
+        $variantCounts{$libarr[0]}=();
+        $variantNames{$libarr[0]}=();
     }
   }
 }
@@ -681,6 +726,12 @@ while($line=<READS>)
      print "$i reads processed!\\n"; 
   }
   if ($line=~/^([ACGT]*)$/) {
+  	if ($count_revcomp eq "yes"){
+  		my $revcom = $line;
+        $revcom=~tr/ACGT/TGCA/;
+        $revcom = reverse($revcom);
+        $line=$revcom if (exists($variants{$revcom}));
+    }
     if (exists($variants{$line})) {
         $variants{$line}++;
     }
@@ -690,42 +741,177 @@ while($line=<READS>)
          }else{
              $unknownvariants{$line}=1;
          }
-    }
+      }
    }
 }
+my $totalunknown=0;
+my $maxunknown=0;
+foreach my $key (keys %unknownvariants)
+{
+   push(@unknownvariantCounts, $unknownvariants{$key});
+   if ($maxunknown < $unknownvariants{$key}) { $maxunknown =  $unknownvariants{$key} };
+   $totalunknown += $unknownvariants{$key};
+}
 
-open(OUTKNOWN, ">", "!{name}_known.tsv");
+open(OUTKNOWN, ">", $name."_known.tsv");
 print OUTKNOWN "lib\\tseq\\tcount\\n";
-
+$i = 0;
 foreach my $key (keys %variants)
 {
    if ($variants{$key}>0){
-      print OUTKNOWN $variantseq{$key}."\\t".$key."\\t".$variants{$key}."\\n";
-      my @libarr=split(/_/,$variantseq{$key});
+      $variantlen = length($key);
+      print OUTKNOWN $variantlib{$key}."\\t".$key."\\t".$variants{$key}."\\n";
+      my @libarr=split(/_/,$variantlib{$key});
       $lib{$libarr[0]}++;
+      $libtotal{$libarr[0]}+=$variants{$key};
+      push(@{$variantCounts{$libarr[0]}}, $variants{$key});
+      push(@{$variantNames{$libarr[0]}}, $variantlib{$key});
    }
+   $i++;
 }
 close(OUTKNOWN);
 
-open(OUTKNOWNSUM, ">", "!{name}_knownsum.tsv");
+open(OUTKNOWNSUM, ">", $name."_knownsum.tsv");
 print OUTKNOWNSUM "lib\\tcount\\n";
+
+my $identified =  0;
+my $totalreads = 0;
+my $avg = 0;
+my $std = 0;
+my $cv = 0;
+my $variant = "";
+my $highestvariant="";
+my $lowestvariant="";
 
 foreach my $key (keys %lib)
 {
    print OUTKNOWNSUM $key."\\t".$lib{$key}."\\n";
+   if ($identified < $lib{$key}){
+      $identified = $lib{$key};
+      $totalreads = $libtotal{$key};
+      if ($identified > 0) {
+         $variant = $key;
+         $avg =  average(\\@{$variantCounts{$key}}); 
+         $std =  stdev(\\@{$variantCounts{$key}});
+	 $cv = $std*100/$avg;
+         ($highestvariant, $lowestvariant) = highlow(\\@{$variantCounts{$key}}, \\@{$variantNames{$key}});
+      }
+   }
 }
 close(OUTKNOWNSUM);
 
-open(OUTUNKNOWN, ">", "!{name}_unknown.tsv");
+open(OUTKNOWNSTAT, ">", $name."_knownstats.tsv");
+print OUTKNOWNSTAT "Sample\\t$variant\\nidentified\\t$identified\\ntotalreads\\t$totalreads\\naverage\\t".round($avg,2)."\\nstd\\t".round($std,2)."\\n%CV\\t".round($cv,2)."\\nHighest_Read(variant)\\t$highestvariant\\nLowest_Read(variant)\\t$lowestvariant\\nsize(nt)\\t$variantlen\\n";
+close(OUTKNOWNSTAT);
+
+open(OUTUNKNOWN, ">", $name."_unknown.tsv");
+open(OUTUNKNOWNFA, ">", $name."_unknown.fa");
 print OUTUNKNOWN "seq\\tcount\\n";
 
 foreach my $key (keys %unknownvariants)
 {
    print OUTUNKNOWN $key."\\t".$unknownvariants{$key}."\\n";
+   print OUTUNKNOWNFA ">".$key.":".$unknownvariants{$key}."\\n".$key."\\n";
 }
 close(OUTUNKNOWN);
+close(OUTUNKNOWNFA);
+open(OUTUNKNOWNSTAT, ">", $name."_unknownstats.tsv");
+print OUTUNKNOWNSTAT "Sample\\t$name\\nTotal_Reads\\t$totalunknown\\nAverage\\t".round(average(\\@unknownvariantCounts),2)."\\nHighest_Read\\t$maxunknown\\n";
 
+close(OUTUNKNOWNSTAT);
+
+sub round{
+     my ($num, $dec) = @_;
+     return floor($num*10**$dec)/10**$dec;
+}
+
+sub average{
+        my($data) = @_;
+        if (not @$data) {
+                die("Empty array\\n");
+        }
+        my $total = 0;
+        foreach (@$data) {
+                $total += $_;
+        }
+        my $average = $total / @$data;
+        return $average;
+}
+
+sub stdev{
+        my($data) = @_;
+        if(@$data == 1){
+                return 0;
+        }
+        my $average = &average($data);
+        my $sqtotal = 0;
+        foreach(@$data) {
+                $sqtotal += ($average-$_) ** 2;
+        }
+        my $std = ($sqtotal / (@$data-1)) ** 0.5;
+        return $std;
+}
+
+sub highlow{
+        my($data, $names) = @_;
+        if (@data == 1){
+            return 0;
+        }
+        my $lownum = 100000;
+        my $highnum = 0;
+        my $lowind = "";
+        my $highind = "";
+        my $i=0;
+        foreach(@$data) {
+           my $name = ${$names}[$i];
+           if ($_ >= $highnum) { 
+                $highind = ($highnum == $_ ? "$highind & $name":$name);
+                $highnum = $_; 
+           }
+           if ($_ <= $lownum) { 
+                $lowind = ($lownum == $_ ? "$lowind & $name":$name);
+                $lownum = $_; 
+           }
+           $i++;
+        }
+        return ("$lownum ($lowind)", "$highnum ($highind)");
+}
 '''
+}
+
+
+process Blastn {
+
+publishDir params.outdir, overwrite: true, mode: 'copy',
+	saveAs: {filename ->
+	if (filename =~ /.*.tsv$/) "blast_out/$filename"
+}
+
+input:
+ set val(name),file(query) from g_45_fastaFile_g_50
+
+output:
+ file "*.tsv"  into g_50_outputFile
+
+errorStrategy 'retry'
+maxRetries 3
+
+when:
+(params.run_Blastn && (params.run_Blastn == "yes"))
+
+shell:
+db = params.Blastn.db
+outfmt = params.Blastn.outfmt
+max_target_seqs = params.Blastn.max_target_seqs
+num_threads = params.Blastn.num_threads
+task = params.Blastn.task
+evalue = params.Blastn.evalue
+
+blastn -task ${task} -query ${query} -evalue ${evalue} -db ${db} -num_threads ${num_threads} -max_target_seqs ${max_target_seqs} -out ${name}_blastout.tsv -outfmt ${outfmt}
+
+
+
+
 }
 
 
@@ -737,10 +923,10 @@ publishDir params.outdir, overwrite: true, mode: 'copy',
 }
 
 input:
- file tsv from g_34_outputFileTSV_g_42.collect()
+ file tsv from g_45_outputFileTSV_g_44.collect()
 
 output:
- file "out/*.tsv"  into g_42_outputFile
+ file "out/*.tsv"  into g_44_outputFile
 
 errorStrategy 'retry'
 maxRetries 1
@@ -755,7 +941,9 @@ use strict;
  my %tf = (
 	"known" => 3,
 	"unknown" => 2,
-	"knownsum" => 2
+	"knownsum" => 2,
+	"knownstats" => 2,
+	"unknownstats" => 2
  );
 my $indir=$ENV{'PWD'};
 my $outdir=$ENV{'PWD'}."/out";
